@@ -1,0 +1,11 @@
+{
+    "inputMessageMetadata": {},
+    "outputMessageMetadata": {
+        "messagePayload": {
+            "connectorName": "#_custom_mule_metadata_type_#",
+            "typeId": "zendeskList"
+        }
+    },
+    "id": "bf08bee2-e2f5-4d57-93ff-db7daeb5a456",
+    "version": "5.2.0.0"
+}
