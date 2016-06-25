@@ -1,0 +1,757 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:CiscoSpark="http://www.mulesoft.org/schema/mule/CiscoSpark" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/CiscoSpark http://www.mulesoft.org/schema/mule/CiscoSpark/current/mule-CiscoSpark.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+ <http:listener-config name="HTTP_Listener_Configuration" host="192.168.1.168" port="8866" doc:name="HTTP Listener Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration" host="183.82.99.100" port="7080" doc:name="HTTP Request Configuration"/>
+     <db:mysql-config name="MYDB" host="192.168.1.163" port="3306" user="bandaru" password="sarasu10" database="sparkdb" doc:name="MySQL Configuration"/>
+    <CiscoSpark:config name="CiscoSpark__Configuration" doc:name="CiscoSpark: Configuration"/>
+    
+    <spring:beans>
+        <spring:bean name="getUserProfile" class="com.bitbucketflow.GetSparkUserProfile"/>
+</spring:beans>
+    <http:request-config name="HTTP_Request_Configuration1" host="api.bitbucket.org" port="80" doc:name="HTTP Request Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration2" host="192.168.1.168" port="8866" doc:name="HTTP Request Configuration"/>
+    <http:request-config name="HTTP_Request_Configuration3" protocol="HTTPS" host="bitbucket.org" port="443" doc:name="HTTP Request Configuration"/>
+    
+    
+    <flow name="Startintegration">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/startintegration" doc:name="HTTP"/>
+        <set-variable variableName="action" value="#[message.inboundProperties.'http.query.params'.action]" doc:name="Action"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.action =='connect'|| flowVars.action =='list' || flowVars.action =='disconnect' ]">
+                <db:select config-ref="MYDB" doc:name="Database">
+                    <db:dynamic-query><![CDATA[SELECT * FROM integrations_settings WHERE integration_id = #[message.inboundProperties.'http.query.params'.integration_id];]]></db:dynamic-query>
+                </db:select>
+                <logger message="lLLLLLLLLLLLLLLLLLLLLLLLLLLLL #[message.payload[0].setup_page_uri]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="return_page_uri" value="#[message.payload[0].setup_page_uri]" doc:name="ReturnPage"/>
+                <choice doc:name="Choice">
+                    <when expression="#[flowVars.action =='connect']">
+                        <expression-component doc:name="Get setup-page-uri"><![CDATA[flowVars.return_page_uri = message.payload[0].setup_page_uri;]]></expression-component>
+                    </when>
+                    <when expression="#[flowVars.action =='list']">
+                        <expression-component doc:name="Get edit-page-uri"><![CDATA[flowVars.return_page_uri = message.payload[0].edit_page_uri;]]></expression-component>
+                    </when>
+                    <when expression="#[flowVars.action =='disconnect']">
+                        <expression-component doc:name="Get delete-page-uri"><![CDATA[flowVars.return_page_uri = message.payload[0].delete_page_uri;]]></expression-component>
+                    </when>
+                </choice>
+                <logger message="RETURN PAGE #[flowVars.return_page_uri]" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration" path="/IframeTest/bitbucket1.html" method="GET" doc:name="HTTP"/>
+            </when>
+            <otherwise>
+                <http:request config-ref="HTTP_Request_Configuration" path="/examples/index.html" method="GET" doc:name="HTTP"/>
+            </otherwise>
+        </choice>
+    </flow>
+    
+     <flow name="UserSettings">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/uisettings/*" doc:name="HTTP"/>
+        <set-variable variableName="context" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[2]]" doc:name="Variable"/>
+        <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integration_id]" doc:name="integration_id"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.context  =  flowVars.context.toString().split('\\?')[0];]]></expression-component>
+        <set-variable variableName="bitbucketAccessToken" value="#[message.inboundProperties.'http.query.params'.bitbucketAccessToken]" doc:name="Variable"/>
+        <set-variable variableName="sparkToken" value="#[message.inboundProperties.'http.query.params'.sparkAccessToken]" doc:name="Variable"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.sparkToken]" doc:name="CiscoSpark"/>
+        <logger message="EXCEPTIONNNNNNNNNNNNNNNNNNNNN #[flowVars.sparkToken]  ST #[payload.getId()] ID #[payload]" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+        <db:select config-ref="MYDB" doc:name="Database">
+            <db:parameterized-query><![CDATA[select access_token from auth_tokens where instance_id = #[flowVars.integration_id] and user_id = #[flowVars.user_id] and token_system = 'BITBUCKET';]]></db:parameterized-query>
+        </db:select>
+        <set-variable variableName="bitbucket_access_token" value="#[message.payload[0].access_token]" doc:name="bitbucket_access_token"/>
+        <logger message="#[flowVars.sparkToken] ST #[flowVars.user_id] UI #[flowVars.integration_id] ID #[flowVars.bitbucketAccessToken]" level="INFO" doc:name="Logger"/>
+        <http:request config-ref="HTTP_Request_Configuration1" path="/2.0/user" method="GET" host="api.bitbucket.org" port="80" doc:name="HTTP">
+            <http:request-builder>
+                <http:header headerName="Authorization" value="Bearer #[flowVars.bitbucket_access_token]"/>
+            </http:request-builder>
+            <http:success-status-code-validator values="0..599"/>
+        </http:request>
+        <object-to-byte-array-transformer doc:name="Object to Byte Array"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <set-variable variableName="repo_user" value="#[json:username]" doc:name="Variable"/>
+        <logger message="#[message.payload] TIRAPA #[flowVars.repo_user]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.context =='bitbucket']">
+                <scatter-gather doc:name="Scatter-Gather">
+                    <processor-chain>
+                        <CiscoSpark:get-rooms config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.sparkToken]" doc:name="CiscoSpark"/>
+                        <set-payload value="#[payload]" doc:name="Set Payload"/>
+                    </processor-chain>
+                    <processor-chain>
+                        <invoke object-ref="getUserProfile" method="getSparkUserProfile" methodArguments="#[flowVars.sparkToken]" methodArgumentTypes="java.lang.String" doc:name="Invoke"/>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <json:object-to-json-transformer doc:name="Object to JSON"/>
+                        <set-payload value="{ &quot;profile&quot; : #[payload] }" doc:name="Set Payload"/>
+                    </processor-chain>
+                    <processor-chain>
+                        <invoke object-ref="getUserProfile" method="getBitbucketRepos" methodArguments="#[flowVars.bitbucket_access_token],#[flowVars.repo_user]" methodArgumentTypes="java.lang.String,java.lang.String" doc:name="Invoke"/>
+                        <object-to-string-transformer doc:name="Object to String"/>
+                        <json:object-to-json-transformer doc:name="Object to JSON"/>
+                        <set-payload value="{ &quot;repos&quot; : #[payload] }" doc:name="Set Payload"/>
+                        <logger message="REPOSITORY #[payload]" level="INFO" doc:name="Logger"/>
+                    </processor-chain>
+                </scatter-gather>
+            </when>
+            <otherwise>
+                <logger message="DEFAULT LOG" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration" path="/examples/index.html" method="GET" doc:name="HTTP"/>
+            </otherwise>
+        </choice>
+        <set-payload value="#[payload]" doc:name="Set Payload"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <logger level="INFO" doc:name="Logger"/>
+    </flow>
+    
+    
+    <flow name="GetApplicationsDetailsFromIntegrationId">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/applications" doc:name="HTTP"/>
+        <set-variable variableName="context" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[1]]" doc:name="Variable"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.context  =  flowVars.context.toString().split('\\?')[0];]]></expression-component>
+        <logger message="FLOS #[flowVars.context]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Copy_of_Choice">
+            <when expression="#[flowVars.context =='applications']">
+                <db:select config-ref="MYDB" doc:name="Database">
+                    <db:parameterized-query><![CDATA[select authoriseurl,clientid,redirecturl,token_endpoint,token_validation_url,application_id,application_name,authorization_type,authorization_endpoint from applications where integration_id = #[message.inboundProperties.'http.query.params'.integration_id]]]></db:parameterized-query>
+                </db:select>
+                <logger message="PAYLOAD &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; #[payload.toString().replace('[','').replace(']','')]" level="INFO" doc:name="Logger"/>
+                <collection-splitter doc:name="Collection Splitter"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <set-payload value="#[payload]" doc:name="Set Payload"/>
+                <logger message="PAYLOAD &gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;#[payload]" level="INFO" doc:name="Logger"/>
+            </when>
+            <otherwise>
+                <logger message="DEFAULT LOG" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration" path="/examples/index.html" method="GET" doc:name="HTTP"/>
+            </otherwise>
+        </choice>
+    </flow>
+    
+    
+    
+    
+    <flow name="Posting_Meaasges_From_Bitbucket_Webhook_Events">
+       <http:listener config-ref="HTTP_Listener_Configuration" path="/hooks/spark/bitbucket/{id}" doc:name="HTTP"/>
+       <set-variable variableName="instanceId" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[4]]" doc:name="instanceId"/>
+       <set-variable variableName="messageValue" value="#[payload]" doc:name="jsonOutput"/>
+        <logger message="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[4]] HHHHHHHHHHHHHH" level="INFO" doc:name="Logger"/>
+       <db:select config-ref="MYDB" doc:name="Database">
+            <db:parameterized-query><![CDATA[select A.instance_id,integration_id,config_json,message_format,channel_id,status,spark_token_id,token_id,token_system,access_token from integration_instances I,auth_tokens A where
+I.instance_id=#[flowVars.instanceId] and I.integration_id=A.instance_id and I.spark_token_id=A.token_id]]></db:parameterized-query>
+       </db:select>
+       <set-variable variableName="spark_access_token" value="#[message.payload[0].access_token]" doc:name="spark_token_id"/>
+       <logger message="#[message.payload[0].access_token] TTTTTTTTTTTTTTTTT SPARK TOKEN ID" level="INFO" doc:name="Logger"/>
+       <set-variable variableName="room_id" value="#[message.payload[0].channel_id]" doc:name="room_id"/>
+       <logger message="#[message.payload[0].channel_id]  CHANNEL #[message.payload[0].token_id]" level="INFO" doc:name="Logger"/>
+       <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_access_token]" doc:name="CiscoSpark">
+           <CiscoSpark:messages-post-request roomId="#[message.payload[0].channel_id]" text="#[flowVars.messageValue]"/>
+       </CiscoSpark:post-messages>
+       <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+       <set-payload value="Sucess" doc:name="Set Payload"/>
+   </flow>
+    
+    
+    
+    
+    <flow name="GetAccess_Token_bitbucket">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/tokendetails/{}" doc:name="HTTP"/>
+        <set-variable variableName="context" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[2]]" doc:name="Context Root"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.context = flowVars.context.toString().split("\\?")[0];]]></expression-component>
+        <logger message="SPLITTER : #[flowVars.context]" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integration_id]" doc:name="integration_id"/>
+        <set-variable variableName="token" value="#[message.inboundProperties.'http.query.params'.token]" doc:name="token"/>
+        <set-variable variableName="code" value="#[message.inboundProperties.'http.query.params'.code]" doc:name="code"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.token]" doc:name="CiscoSpark"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+        <logger message="tirapa #[payload.getId()]TIRAPA" level="INFO" doc:name="Logger"/>
+        <db:select config-ref="MYDB" doc:name="Database">
+            <db:parameterized-query><![CDATA[select * from applications where integration_id=#[flowVars.integration_id]]]></db:parameterized-query>
+        </db:select>
+        <logger message="KUMER REDDY #[message.payload[0].clientid], #[message.payload[0].secretpwd] , #[message.payload[0].clientid]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[(payload!=empty)&amp;&amp;(flowVars.context=='bitbucket')]">
+                <logger message="TTRLOGGER" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="code" value="#[flowVars.code]" doc:name="code"/>
+        		<set-variable variableName="client_id" value="#[message.payload[0].clientid]" doc:name="client_id"/>
+        		<set-variable variableName="client_secret" value="#[message.payload[0].secretpwd]" doc:name="client_secret"/>
+        		<set-payload value="#[{'client_id':flowVars.client_id,'client_secret':flowVars.client_secret,'grant_type':'authorization_code','code':flowVars.code}]" doc:name="Set Payload"/>
+        		<http:request config-ref="HTTP_Request_Configuration3" path="/site/oauth2/access_token" method="POST"   doc:name="HTTP" followRedirects="true">
+            	<http:failure-status-code-validator values="500..599"/>
+        		</http:request>
+				<byte-array-to-string-transformer returnClass="java.lang.String" doc:name="Byte Array to String"/>
+                <logger message="TTRLOGGET #[json:access_token]  accetoken #[json:refresh_token] REF TOKEN#[payload]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="paylload" value="#[payload]" doc:name="payload"/>
+                <set-variable variableName="access_token" value="#[json:access_token]" doc:name="access_token"/>
+                <set-variable variableName="refresh_token" value="#[json:refresh_token]" doc:name="refresh_token"/>
+                <logger message="#[payload] #[flowVars.integration_id],'BITBUCKET',#[json:access_token],#[json:refresh_token],#[function:now],#[function:now],#[flowVars.user_id] BITBUCKETTIRAPA" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="Check Existinstance of the Bickbucket Token">
+                    <db:parameterized-query><![CDATA[select access_token from auth_tokens where instance_id = #[flowVars.integration_id] and user_id = #[flowVars.user_id] and token_system = 'BITBUCKET';]]></db:parameterized-query>
+                </db:select>
+                <logger message="BICKBUCKETTIRAPA #[payload!=empty] #[flowVars.access_token] #[flowVars.refresh_token]" level="INFO" doc:name="Logger"/>
+                <choice doc:name="Choice">
+                    <when expression="#[payload == empty]">
+                        <db:insert config-ref="MYDB" doc:name="Database Insert Bitbucket Token Details">
+                            <db:parameterized-query><![CDATA[insert into auth_tokens(instance_id,token_system,access_token,refresh_token,expires,refresh_expires,user_id) values(#[flowVars.integration_id],'BITBUCKET',#[flowVars.access_token],#[flowVars.refresh_token],#[function:now],#[function:now],#[flowVars.user_id]);]]></db:parameterized-query>
+                        </db:insert>
+                        <logger message="INSERTED BITBUCKET DETAILS #[payload]" level="INFO" doc:name="Logger"/>
+                    </when>
+                    <when expression="#[payload !=empty]">
+                        <db:update config-ref="MYDB" doc:name="Database">
+                            <db:parameterized-query><![CDATA[update auth_tokens set access_token = #[flowVars.access_token], refresh_token = #[flowVars.refresh_token] where instance_id = #[flowVars.integration_id] and user_id = #[flowVars.user_id] and token_system = 'BITBUCKET';]]></db:parameterized-query>
+                        </db:update>
+                        <logger message="UPDATEDD TOKEN DETAILS #[payload]" level="INFO" doc:name="Logger"/>
+                    </when>
+                </choice>
+                <set-payload value="#[flowVars.paylload]" doc:name="Set Payload"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="PAYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY #[payload]" level="INFO" doc:name="Logger"/>
+            </when>
+            <when expression="">
+                <set-payload value="invalid" doc:name="ID Not Found"/>
+            </when>
+        </choice>
+    </flow>
+    
+    
+    <flow name="Insert_token_data">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/saveintegration/{}" allowedMethods="POST" doc:name="HTTP"/>
+        <set-variable variableName="context" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[2]]" doc:name="Context Root"/>
+        <set-variable variableName="repo_name" value="#[json:config/repo_name]" doc:name="repo_name"/>
+        <set-variable variableName="owner_name" value="#[json:config/owner_name]" doc:name="owner_name"/>
+        <set-variable variableName="id" value="#[json:integration_id]" doc:name="id"/>
+        <set-variable variableName="user_id" value="#[json:user_id]" doc:name="user_id"/>
+        <set-variable variableName="int_token" value="#[json:integration_token]" doc:name="int_token"/>
+        <set-variable variableName="refresh_token" value="#[json:refresh_token]" doc:name="refresh_token"/>
+        <set-variable variableName="expires_in" value="#[json:expires_in]" doc:name="expires"/>
+        <set-variable variableName="refresh_expires" value="#[json:refresh_expires]" doc:name="refresh_expires"/>
+        <set-variable variableName="spark_token" value="#[json:spark_token]" doc:name="spark_token"/>
+        <set-variable variableName="repositories" value="#[json:repositories]" doc:name="repositories"/>
+        <set-variable variableName="notification" value="#[json:config]" doc:name="notification"/>
+        <set-variable variableName="room" value="#[json:room_id]" doc:name="room"/>
+        <set-variable variableName="notificate_events" value="[ #[payload] ]" doc:name="notifications"/>
+        <set-payload value="#[json:config]" doc:name="Set Payload"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <scripting:component doc:name="JavaScript">
+            <scripting:script engine="JavaScript"><![CDATA[       var arr = JSON.parse(payload);
+         var replyData={};
+        var replyEvents=[];
+		if(arr) {
+		var notfications =arr.notifications;
+		if(notfications) {
+		var obj = notfications.repo;
+		if(obj){
+		if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "repo"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("repo"+":"+obj)
+      }
+	  }
+	  obj = notfications.issue;
+	  	if(obj){
+	   if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "issue"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("issue"+":"+obj)
+      }
+	  }
+	   var obj = notfications.pullrequest;
+	  	if(obj){
+	   if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "pullrequest"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("pullrequest"+":"+obj)
+      }
+	  }
+	  }
+        }
+        replyData.events = replyEvents;
+        
+        message.setPayload(replyData);
+        result = message;
+  
+]]></scripting:script>
+        </scripting:component>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <set-variable variableName="notification_to_events" value="#[payload.toString().toString().replace('{','').replace('}','')]" doc:name="notification_to_events"/>
+        <logger message="#[payload ]EVENT NOTIFICATION PAYLOAD #[flowVars.notification_to_events]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.context=='bitbucket']">
+                <db:select config-ref="MYDB" doc:name="UUID">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid";]]></db:parameterized-query>
+                </db:select>
+                <set-variable variableName="uuid1" value="#[message.payload[0].uuid]" doc:name="Variable"/>
+                <logger message="#[message.payload[0].uuid]" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="INT TOKEN">
+                    <db:parameterized-query><![CDATA[insert into auth_tokens (token_id,instance_id,token_system,access_token,refresh_token,expires,refresh_expires)
+values(#[message.payload[0].uuid],#[flowVars.id],'BITBUCKET',#[flowVars.int_token],#[flowVars.refresh_token],#[function:now],#[flowVars.refresh_expires]);]]></db:parameterized-query>
+
+                </db:insert>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="UUID2">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid2";]]></db:parameterized-query>
+                </db:select>
+                <logger message="#[message.payload[0].uuid2]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="uuid2" value="#[message.payload[0].uuid2]" doc:name="Variable"/>
+                <db:insert config-ref="MYDB" doc:name="SPARK TOKEN">
+                    <db:parameterized-query><![CDATA[insert into auth_tokens (token_id,instance_id,token_system,access_token)
+values(#[message.payload[0].uuid2],#[flowVars.id],'SPARK',#[flowVars.spark_token]);]]></db:parameterized-query>
+
+                </db:insert>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="UUID3">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid3";]]></db:parameterized-query>
+                </db:select>
+                <logger message="#[message.payload[0].uuid3]" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="insert_instances">
+                    <db:parameterized-query><![CDATA[insert into integration_instances (instance_id,integration_id,config_json,status,created_date,spark_token_id,integration_token_id,channel_id,user_id) values(#[message.payload[0].uuid3],#[flowVars.id],#[flowVars.notification],'ACTIVE', #[function:now], #[flowVars.uuid2], #[flowVars.uuid1], #[flowVars.room],#[flowVars.user_id])]]></db:parameterized-query>
+                </db:insert>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="before GET instance_ID : #[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="get instance_id">
+                    <db:parameterized-query><![CDATA[select instance_id from integration_instances where spark_token_id=#[flowVars.uuid2] AND integration_token_id=#[flowVars.uuid1]]]></db:parameterized-query>
+                </db:select>
+                <logger message="BEFORE GET_DOMAIN #[message.payload[0].instance_id]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="instance_id" value="#[message.payload[0].instance_id]" doc:name="Variable"/>
+                <db:select config-ref="MYDB" doc:name="Get Domain">
+                    <db:parameterized-query><![CDATA[select value from config_details where webhookkey='WEBHOOKDOMAIN';]]></db:parameterized-query>
+                </db:select>
+                <logger message="AFTER DOMAIN" level="INFO" doc:name="Logger"/>
+                <logger message="#[message.payload[0].value]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="url" value="#['https://' + '183.82.99.100'+ '/hooks/spark/bitbucket/' +flowVars.instance_id]" doc:name="Variable"/>
+                <logger message="WEBHOOK URL = #[flowVars.url]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="data" value="{&quot;description&quot;: &quot;Webhook Description&quot;,&quot;url&quot;: &quot;#[message.payload[0].value]/hooks/spark/bitbucket/#[flowVars.instance_id]&quot;,&quot;active&quot;: true,#[flowVars.notification_to_events]}" doc:name="Variable"/>
+                <set-payload value="#[data]" doc:name="Set Payload"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="INT_TOKEN :  #[flowVars.int_token]  ------ #[data] #[flowVars.owner_name]" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration1" path="/2.0/repositories/#[flowVars.owner_name]/#[flowVars.repo_name]/hooks" method="POST" host="api.bitbucket.org" port="80" doc:name="HTTP">
+                    <http:request-builder>
+                        <http:query-param paramName="" value=""/>
+                        <http:header headerName="Authorization" value="Bearer #[flowVars.int_token]"/>
+                        <http:header headerName="Content-Type" value="application/json"/>
+
+                    </http:request-builder>
+                    <http:success-status-code-validator values="0..599"/>
+                </http:request>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="WEBHOOK UUID #[json:uuid] WEBHOOK URL #[json:url] WebHook JSON #[payload]" level="INFO" doc:name="Logger"/>
+                <logger message="#[payload] TTT" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="Stoke Webhook">
+                    <db:parameterized-query><![CDATA[INSERT INTO webhook_details(instance_id,webhook_id,webhook_url,webhook_json) values(#[flowVars.instance_id],#[json:uuid],#[json:url],#[payload]);]]></db:parameterized-query>
+                </db:insert>
+                <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_token]" doc:name="CiscoSpark">
+                    <CiscoSpark:messages-post-request roomId="#[flowVars.room]" text="Added Bitbucket to this room!!"/>
+                </CiscoSpark:post-messages>
+            </when>
+            <otherwise>
+                <set-payload value="Invalid URL" doc:name="Set Payload"/>
+            </otherwise>
+        </choice>
+    </flow>
+        
+        
+        
+        
+        
+        <flow name="Update_token_data">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/updateintegration/{}" allowedMethods="POST" doc:name="HTTP"/>
+        <set-variable variableName="context" value="#[message.inboundProperties.'http.request.uri'.split(&quot;/&quot;)[2]]" doc:name="Context Root"/>
+        <set-variable variableName="repo_name" value="#[json:config/repo_name]" doc:name="repo_name"/>
+        <set-variable variableName="repo_updated" value="#[json:repo_modified]" doc:name="repo_updated"/>
+        <set-variable variableName="room_modified" value="#[json:room_modified]" doc:name="room_modified"/>
+        <set-variable variableName="owner_name" value="#[json:config/owner_name]" doc:name="owner_name"/>
+        <set-variable variableName="id" value="#[json:integration_id]" doc:name="id"/>
+        <set-variable variableName="user_id" value="#[json:user_id]" doc:name="user_id"/>
+        <set-variable variableName="int_token" value="#[json:integration_token]" doc:name="int_token"/>
+        <logger message="#[flowVars.repo_updated]" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="refresh_token" value="#[json:refresh_token]" doc:name="refresh_token"/>
+        <set-variable variableName="expires_in" value="#[json:expires_in]" doc:name="expires"/>
+        <set-variable variableName="refresh_expires" value="#[json:refresh_expires]" doc:name="refresh_expires"/>
+        <set-variable variableName="spark_token" value="#[json:spark_token]" doc:name="spark_token"/>
+        <set-variable variableName="repositories" value="#[json:repositories]" doc:name="repositories"/>
+        <set-variable variableName="notification" value="#[json:config]" doc:name="notification"/>
+        <set-variable variableName="old_room" value="#[json:room_id_old]" doc:name="old_room_id"/>
+        <set-variable variableName="room" value="#[json:room_id]" doc:name="room"/>
+        <set-variable variableName="notificate_events" value="[ #[payload] ]" doc:name="notifications"/>
+        <set-variable variableName="instanceId" value="#[json:instance_id]" doc:name="instanceId"/>
+        <set-variable variableName="oldRepoName" value="#[json:repo_name_old]" doc:name="old-repo"/>
+         <set-payload value="#[json:config]" doc:name="Set Payload"/>
+        <object-to-string-transformer doc:name="Object to String"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <scripting:component doc:name="JavaScript">
+            <scripting:script engine="JavaScript"><![CDATA[       var arr = JSON.parse(payload);
+         var replyData={};
+        var replyEvents=[];
+		if(arr) {
+		var notfications =arr.notifications;
+		if(notfications) {
+		var obj = notfications.repo;
+		if(obj){
+		if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "repo"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("repo"+":"+obj)
+      }
+	  }
+	  obj = notfications.issue;
+	  	if(obj){
+	   if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "issue"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("issue"+":"+obj)
+      }
+	  }
+	   var obj = notfications.pullrequest;
+	  	if(obj){
+	   if(Object.prototype.toString.call(obj) === '[object Array]'){
+       for(var i=0;i<obj.length;i++){
+         var str = "pullrequest"+":"+obj[i];
+          replyEvents.push(str);
+      }
+      }else{
+      replyEvents.push("pullrequest"+":"+obj)
+      }
+	  }
+	  }
+        }
+        replyData.events = replyEvents;
+        
+        message.setPayload(replyData);
+        result = message;
+  
+]]></scripting:script>
+        </scripting:component>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <set-variable variableName="notification_to_events" value="#[payload.toString().toString().replace('{','').replace('}','')]" doc:name="notification_to_events"/>
+        <logger message="#[flowVars.old_room != flowVars.room] EVENT NOTIFICATION PAYLOAD #[flowVars.notification_to_events] ROOM DODIFIED #[flowVars.room_modified]  #[flowVars.room_modified=='true']" level="INFO" doc:name="Logger"/>
+        
+        <db:select config-ref="MYDB" doc:name="Database Get WebHook ID">
+            <db:dynamic-query><![CDATA[select webhook_id from webhook_details where instance_id = '#[flowVars.instanceId]';]]></db:dynamic-query>
+        </db:select>
+        <logger message="#[payload[0]] ZERO PAYLOAD" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="webhook_id" value="#[message.payload[0].webhook_id]" doc:name="Variable"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.repo_updated == 'true']">
+                <logger message="RREPO IS UPDATED #[flowVars.repo_updated] #[flowVars.instanceId]" level="INFO" doc:name="Logger"/>
+                <logger message="#[flowVars.oldRepoName] OLHHHHHHHHDDDDDDDDDDDDDDDDDDDDDDOLD  /2.0/repositories/#[flowVars.owner_name]/#[flowVars.oldRepoName]/hooks/#[message.payload[0].webhook_id]" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration1" path="/2.0/repositories/#[flowVars.owner_name]/#[flowVars.oldRepoName]/hooks/#[message.payload[0].webhook_id]" method="DELETE" doc:name="HTTP Delete Webhook">
+                    <http:request-builder>
+                        <http:header headerName="Authorization" value="Bearer #[flowVars.int_token]"/>
+                        <http:header headerName="Content-Type" value="application/json"/>
+
+                    </http:request-builder>
+                </http:request>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="WEBHOOK DELETED WITH DATA #[payload]" level="INFO" doc:name="Logger"/>
+                <db:delete config-ref="MYDB" doc:name="Database to delete Webhooks row">
+                    <db:dynamic-query><![CDATA[delete from webhook_details where instance_id = '#[flowVars.instanceId]';]]></db:dynamic-query>
+                </db:delete>
+                <logger message="DELETED WEHHOOK FORM DATABASE #[payload]" level="INFO" doc:name="Logger"/>
+                <db:update config-ref="MYDB" doc:name="Database to update delete is ture">
+                    <db:parameterized-query><![CDATA[update integration_instances set deleted = 'true' where instance_id = #[flowVars.instanceId];]]></db:parameterized-query>
+                </db:update>
+            </when>
+            <otherwise>
+                <logger message="RREPO IS NOT UPDATED #[flowVars.repo_updated]" level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="Choice Room Modified?">
+            <when expression="#[flowVars.old_room != flowVars.room]">
+                <logger message="ROOM MODIFIEDDDDDDDDDDDDDDDDD" level="INFO" doc:name="Logger"/>
+                <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_token]" doc:name="CiscoSpark Message to Old Room">
+                    <CiscoSpark:messages-post-request roomId="#[flowVars.old_room]" text="This room has been removed form the Bitbucket configuration..........!!"/>
+                </CiscoSpark:post-messages>
+                <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_token]" doc:name="CiscoSpark Message to Newly Added Room">
+                    <CiscoSpark:messages-post-request roomId="#[flowVars.room]" text="Added Bibucket to this toom....!"/>
+                </CiscoSpark:post-messages>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Default"/>
+            </otherwise>
+        </choice>
+        <logger message="FINAL #[flowVars.notificate_events]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.context=='bitbucket' &amp;&amp; flowVars.repo_updated == 'true']">
+                <db:select config-ref="MYDB" doc:name="UUID">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid";]]></db:parameterized-query>
+                </db:select>
+                <set-variable variableName="uuid1" value="#[message.payload[0].uuid]" doc:name="Variable"/>
+                <logger message="#[message.payload[0].uuid]" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="INT TOKEN">
+                    <db:parameterized-query><![CDATA[insert into auth_tokens (token_id,instance_id,token_system,access_token,refresh_token,expires,refresh_expires)
+values(#[message.payload[0].uuid],#[flowVars.id],'BITBUCKET',#[flowVars.int_token],#[flowVars.refresh_token],#[function:now],#[flowVars.refresh_expires]);]]></db:parameterized-query>
+
+                </db:insert>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="UUID2">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid2";]]></db:parameterized-query>
+                </db:select>
+                <logger message="#[message.payload[0].uuid2]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="uuid2" value="#[message.payload[0].uuid2]" doc:name="Variable"/>
+                <db:insert config-ref="MYDB" doc:name="SPARK TOKEN">
+                    <db:parameterized-query><![CDATA[insert into auth_tokens (token_id,instance_id,token_system,access_token)
+values(#[message.payload[0].uuid2],#[flowVars.id],'SPARK',#[flowVars.spark_token]);]]></db:parameterized-query>
+
+                </db:insert>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="UUID3">
+                    <db:parameterized-query><![CDATA[select uuid() as "uuid3";]]></db:parameterized-query>
+                </db:select>
+                <logger message="#[message.payload[0].uuid3]" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="insert_instances">
+                    <db:parameterized-query><![CDATA[insert into integration_instances (instance_id,integration_id,config_json,status,created_date,spark_token_id,integration_token_id,channel_id,user_id) values(#[message.payload[0].uuid3],#[flowVars.id],#[flowVars.notification],'ACTIVE', #[function:now], #[flowVars.uuid2], #[flowVars.uuid1], #[flowVars.room],#[flowVars.user_id])]]></db:parameterized-query>
+                </db:insert>
+
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="before GET instance_ID : #[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="get instance_id">
+                    <db:parameterized-query><![CDATA[select instance_id from integration_instances where spark_token_id=#[flowVars.uuid2] AND integration_token_id=#[flowVars.uuid1]]]></db:parameterized-query>
+                </db:select>
+                <logger message="BEFORE GET_DOMAIN #[message.payload[0].instance_id]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="instance_id" value="#[message.payload[0].instance_id]" doc:name="Variable"/>
+                <db:select config-ref="MYDB" doc:name="Get Domain">
+                    <db:parameterized-query><![CDATA[select value from config_details where webhookkey='WEBHOOKDOMAIN';]]></db:parameterized-query>
+                </db:select>
+                <logger message="AFTER DOMAIN" level="INFO" doc:name="Logger"/>
+                <logger message="#[message.payload[0].value]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="url" value="#['https://' + '183.82.99.100'+ '/hooks/spark/bitbucket/' +flowVars.instance_id]" doc:name="Variable"/>
+                <logger message="WEBHOOK URL = #[flowVars.url]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="data" value="{&quot;description&quot;: &quot;Webhook Description&quot;,&quot;url&quot;: &quot;#[message.payload[0].value]/hooks/spark/bitbucket/#[flowVars.instance_id]&quot;,&quot;active&quot;: true,#[flowVars.notification_to_events]}" doc:name="Variable"/>
+                <set-payload value="#[data]" doc:name="Set Payload"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="INT_TOKEN :  #[flowVars.int_token]  ------ #[data] #[flowVars.owner_name]" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration1" path="/2.0/repositories/#[flowVars.owner_name]/#[flowVars.repo_name]/hooks" method="POST" host="api.bitbucket.org" port="80" doc:name="HTTP">
+                    <http:request-builder>
+                        <http:header headerName="Authorization" value="Bearer #[flowVars.int_token]"/>
+                        <http:header headerName="Content-Type" value="application/json"/>
+                    </http:request-builder>
+                    <http:success-status-code-validator values="0..599"/>
+                </http:request>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="WEBHOOK UUID #[json:uuid] WEBHOOK URL #[json:url] WebHook JSON #[payload]" level="INFO" doc:name="Logger"/>
+                <logger message="#[payload] TTT  #[flowVars.instance_id],#[json:uuid],#[json:url],#[payload]" level="INFO" doc:name="Logger"/>
+                <db:insert config-ref="MYDB" doc:name="Stoke Webhook">
+                    <db:parameterized-query><![CDATA[INSERT INTO webhook_details(instance_id,webhook_id,webhook_url,webhook_json) values(#[flowVars.instance_id],#[json:uuid],#[json:url],#[payload]);]]></db:parameterized-query>
+                </db:insert>
+                <set-variable variableName="msg" value="Updated Bitbucket of this room!! and Repo change from #[flowVars.oldRepoName] to #[flowVars.repo_name]" doc:name="Variable"/>
+            </when>
+            <when expression="#[flowVars.context=='bitbucket' &amp;&amp; flowVars.repo_updated == 'false']">
+                <logger message="U" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="data" value="{&quot;description&quot;: &quot;Webhook Description&quot;,&quot;url&quot;: &quot;http://183.82.99.100:8855/hooks/spark/bitbucket/#[flowVars.instanceId]&quot;,&quot;active&quot;: true,#[flowVars.notification_to_events]}" doc:name="Variable"/>
+                <set-payload value="{&quot;description&quot;: &quot;Webhook Description&quot;,&quot;url&quot;: &quot;http://183.82.99.100:8855/hooks/spark/bitbucket/6359e6cd-33cd-11e6-86d7-00ffa005be09&quot;,&quot;active&quot;: true,&quot;events&quot;:[&quot;repo:push&quot;,&quot;repo:commit_comment_created&quot;,&quot;issue:created&quot;,&quot;issue:updated&quot;,&quot;issue:comment_created&quot;]}" doc:name="Set Payload"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="PAYLOAD #[payload]" level="INFO" doc:name="Logger"/>
+                <logger message="WEB HOOK /2.0/repositories/#[flowVars.owner_name]/#[flowVars.repo_name]/hooks/#[flowVars.webhook_id]" level="INFO" doc:name="Logger"/>
+                <http:request config-ref="HTTP_Request_Configuration1" path="/2.0/repositories/#[flowVars.owner_name]/#[flowVars.repo_name]/hooks/#[flowVars.webhook_id]" method="PUT" host="api.bitbucket.org" port="80" doc:name="HTTP Update bitbucket">
+                    <http:request-builder>
+                        <http:uri-param paramName="Authorization" value="Bearer #[flowVars.int_token]"/>
+                        <http:uri-param paramName="Content-Type" value="application/json"/>
+
+                    </http:request-builder>
+                    <http:success-status-code-validator values="0..599"/>
+                </http:request>
+                <logger level="INFO" doc:name="Logger"/>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <set-variable variableName="msg" value="Webhook updated with the details...! #[flowVars.notification_to_events]" doc:name="Variable"/>
+                <db:update config-ref="MYDB" doc:name="Update Integration Instances ">
+                    <db:dynamic-query><![CDATA[update integration_instances set config_json = '#[flowVars.notification]',status = 'ACTIVE',updated_date='#[function:now]' ,channel_id = '#[flowVars.room]' where instance_id ='#[flowVars.instanceId]';]]></db:dynamic-query>
+                </db:update>
+                <logger message="#[payload] UPdated" level="INFO" doc:name="Logger"/>
+            </when>
+            <otherwise>
+                <set-payload value="Invalid URL" doc:name="Set Payload"/>
+            </otherwise>
+        </choice>
+        <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_token]" doc:name="CiscoSpark">
+            <CiscoSpark:messages-post-request roomId="#[flowVars.room]" text="#[flowVars.msg]"/>
+        </CiscoSpark:post-messages>
+    </flow>
+    
+    
+    
+    <flow name="ListInstances">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/listinstances/bitbucket" doc:name="HTTP"/>
+        <set-variable variableName="token" value="#[message.inboundProperties.'http.query.params'.token]" doc:name="token"/>
+        <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integration_id]" doc:name="integration_id"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.token]" doc:name="CiscoSpark"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+        <logger message="#[flowVars.user_id]" level="INFO" doc:name="Logger"/>
+             <db:select config-ref="MYDB" doc:name="List_Instances">
+            <db:parameterized-query><![CDATA[select I1.instance_id,integration_id,config_json,message_format,I1.user_id,channel_id,status,deleted,created_date,updated_date,a1.token_system as spark_token_system,a1.refresh_expires as spark_refresh_expires,a1.expires as spark_expires,a1.refresh_token as spark_refresh_token,a1.token_id as spark_token,a1.access_token as spark_access_token ,a2.token_system as int_token_system,a2.expires as int_expires,a2.refresh_token as int_refresh_token,a2.refresh_expires as int_refresh_expires,a2.token_id as int_token,a2.access_token as int_access_token from integration_instances I1, auth_tokens a1, auth_tokens a2 where  I1.integration_id =#[flowVars.integration_id] and I1.deleted="false" and I1.user_id=#[flowVars.user_id] and I1.spark_token_id=a1.token_id and I1.integration_token_id=a2.token_id;]]></db:parameterized-query>
+
+        </db:select>
+        <dw:transform-message metadata:id="a18db982-c173-4b69-a847-357462ed5692" doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+    instanceId: payload01.instance_id,
+    integrationId: payload01.integration_id,
+    configJson: payload01.config_json,
+    messageFormat: payload01.message_format,
+    userId: payload01.user_id,
+    channelId: payload01.channel_id,
+    status: payload01.status,
+    createdDate: payload01.created_date,
+    updatedDate: payload01.updated_date,
+    deleted: payload01.deleted,
+    IntegrationToken: [{
+        tokenId: payload01.int_token,
+        expires: payload01.int_expires,
+        tokenSystem: payload01.int_token_system,
+        accessToken: payload01.int_access_token,
+        refreshToken: payload01.int_refresh_token,
+        refreshExpires: payload01.int_refresh_expires
+    }],
+    sparkToken: [{
+        tokenId: payload01.spark_token,
+        expires: payload01.spark_expires,
+        tokenSystem: payload01.spark_token_system,
+        accessToken: payload01.spark_access_token,
+        refreshToken: payload01.spark_refresh_token,
+        refreshExpires: payload01.spark_refresh_expires
+    }]
+    
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <logger message="AFETR JSON : #[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    
+    
+    <flow name="Delete_instance">
+       <http:listener config-ref="HTTP_Listener_Configuration" path="/deleteInstance" doc:name="HTTP"/>
+       <set-variable variableName="instanceId" value="#[message.inboundProperties.'http.query.params'.instanceId]" doc:name="instanceId"/>
+       <logger message="#[flowVars.instanceId]" level="INFO" doc:name="Logger"/>
+       <db:select config-ref="MYDB" doc:name="Get RoomId and Spark Access Token">
+            <db:parameterized-query><![CDATA[select a1.channel_id as roomId, a2.access_token as token from integration_instances a1,auth_tokens a2 where a1.instance_id=#[flowVars.instanceId] and a2.token_id=a1.spark_token_id;]]></db:parameterized-query>
+       </db:select>
+        <choice doc:name="Choice">
+            <when expression="#[(payload!=empty)]">
+                <set-variable variableName="roomId" value="#[message.payload[0].roomId]" doc:name="RoomId"/>
+                <set-variable variableName="token" value="#[message.payload[0].token]" doc:name="Access Token"/>
+                <logger message="#[flowVars.roomId] AND #[flowVars.token]" level="INFO" doc:name="Logger"/>
+                <db:update config-ref="MYDB" doc:name="Delete Instance">
+                    <db:parameterized-query><![CDATA[update integration_instances set deleted='true' where instance_id=#[flowVars.instanceId]]]></db:parameterized-query>
+                </db:update>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+                <db:select config-ref="MYDB" doc:name="Database">
+                    <db:dynamic-query><![CDATA[select webhook_id,webhook_json from webhook_details where instance_id = '#[flowVars.instanceId]';]]></db:dynamic-query>
+                </db:select>
+                <logger message="MESSAGE #[message.payload[0].webhook_id]  " level="INFO" doc:name="Logger"/>
+                <set-variable variableName="webhook_id" value="#[message.payload[0].webhook_id]  " doc:name="webhook_id"/>
+                <set-payload value="#[message.payload[0].webhook_json]" doc:name="Set Payload"/>
+                <json:object-to-json-transformer doc:name="Object to JSON"/>
+                <set-variable variableName="full_name" value="#[json:subject/full_name]" doc:name="full_name"/>
+                <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.token]" doc:name="CiscoSpark"/>
+                <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+                <db:select config-ref="MYDB" doc:name="Database">
+                    <db:parameterized-query><![CDATA[select * from auth_tokens where token_system='BITBUCKET' and user_id= #[flowVars.user_id];]]></db:parameterized-query>
+                </db:select>
+                <set-variable variableName="bitbucket_token" value="#[message.payload[0].access_token]" doc:name="bitbucket_token"/>
+               
+                <logger message="DELETED WEBHOOK #[flowVars.bitbucket_token]" level="INFO" doc:name="Logger"/>
+                <logger message="WEBHOOK WEBHOOK /2.0/repositories/#[flowVars.full_name]/hooks/#[flowVars.webhook_id]" level="INFO" doc:name="Logger"/>
+                 
+                <logger message="DEPELETE WEBHOOK #[payload]" level="INFO" doc:name="Logger"/>
+
+            </when>
+            <otherwise>
+                <logger message="NO DATA FOUND" level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+       <CiscoSpark:post-messages config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.token]" doc:name="CiscoSpark">
+           <CiscoSpark:messages-post-request roomId="#[flowVars.roomId]" text="#['Your BitBucket Instance has been deleted.']"/>
+       </CiscoSpark:post-messages>
+       <logger message="#[flowVars.roomId] AND #[flowVars.token]" level="INFO" doc:name="Logger"/>
+   </flow>
+    <flow name="DisconnectIntegrations">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/disconnectintegration" doc:name="HTTP"/>
+        <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integration_id]" doc:name="integration_id"/>
+        <set-variable variableName="spark_token" value="#[message.inboundProperties.'http.query.params'.token]" doc:name="token"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_token]" doc:name="CiscoSpark"/>
+        <logger message="payload #[payload.getId()] Tirapa" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+        <db:delete config-ref="MYDB" doc:name="Database">
+            <db:parameterized-query><![CDATA[delete from auth_tokens where user_id = #[flowVars.user_id]  and token_system != 'SPARK' and instance_id=#[flowVars.integration_id]]]></db:parameterized-query>
+        </db:delete>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="RemoveAllInstances">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/bitbucket/removeallinstances" doc:name="HTTP"/>
+        <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integration_id]" doc:name="integration_id"/>
+        <set-variable variableName="token" value="#[message.inboundProperties.'http.query.params'.token]" doc:name="token"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.token]" doc:name="CiscoSpark Get People Details"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+        <db:select config-ref="MYDB" doc:name="List Instances From Integration_Instances">
+            <db:dynamic-query><![CDATA[select * from integration_instances where integration_id = '#[flowVars.integration_id]' and user_id = '#[flowVars.user_id]' and deleted = "false";]]></db:dynamic-query>
+        </db:select>
+        <logger message="REMOVEALLA  #[payload]" level="INFO" doc:name="Logger"/>
+        <foreach doc:name="For Each">
+            <logger message="#[payload.instance_id] IN FOR EACH #[payload]" level="INFO" doc:name="Logger"/>
+            <set-variable variableName="instance_id" value="#[payload.instance_id]" doc:name="instanceId"/>
+            <http:request config-ref="HTTP_Request_Configuration2" path="/deleteInstance" method="GET" host="192.168.1.168" port="8866" doc:name="HTTP CALL DELETE INSTANCE ">
+                <http:request-builder>
+                    <http:query-param paramName="instanceId" value="#[flowVars.instance_id]"/>
+                </http:request-builder>
+            </http:request>
+        </foreach>
+    </flow>
+   <flow name="Disconnect_instance">
+       <http:listener config-ref="HTTP_Listener_Configuration" path="/disconnectInstance" doc:name="HTTP"/>
+       <set-variable variableName="spark_access_token" value="#[message.inboundProperties.'http.query.params'.token]" doc:name="spark_access_token"/>
+       <set-variable variableName="integration_id" value="#[message.inboundProperties.'http.query.params'.integrationId]" doc:name="integration_id"/>
+        <CiscoSpark:get-people-detail config-ref="CiscoSpark__Configuration" token="Bearer #[flowVars.spark_access_token]" doc:name="CiscoSpark"/>
+        <set-variable variableName="user_id" value="#[payload.getId()]" doc:name="user_id"/>
+       <logger message="USERID  TEST  KUMAR #[flowVars.user_id]" level="INFO" doc:name="Logger"/>
+       <db:update config-ref="MYDB" doc:name="Disconnect Instances">
+            <db:parameterized-query><![CDATA[update integration_instances set status='INACTIVE' where integration_id=#[flowVars.integration_id] AND deleted='false' and user_id=#[flowVars.user_id]]]></db:parameterized-query>
+       </db:update>
+       <json:object-to-json-transformer doc:name="Object to JSON"/>
+       <set-payload value="Disconnected" doc:name="Set Payload"/>
+   </flow>
+    
+    
+    
+    
+</mule>
+
