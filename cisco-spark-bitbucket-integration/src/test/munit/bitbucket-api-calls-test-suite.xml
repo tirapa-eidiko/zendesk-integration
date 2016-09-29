@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:mock="http://www.mulesoft.org/schema/mule/mock" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/mock http://www.mulesoft.org/schema/mule/mock/current/mule-mock.xsd">
+    <munit:config name="munit" doc:name="MUnit configuration"/>
+    <spring:beans>
+        <spring:import resource="classpath:bitbucket-api-calls.xml"/>
+        <spring:import resource="classpath:global.xml"/>
+    </spring:beans>
+    <munit:test name="bitbucket-api-calls-test-suite-postBitbucketTokenFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTPP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+
+
+        </mock:when>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	"authSettings": {
+		"code":"rhhU5vFT8KNnbbQA4Y"
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+
+        <flow-ref name="postBitbucketTokenFlow" doc:name="postBitbucketTokenFlow"/>
+        <logger message="#[payload.error != empty] #[payload.error] PAYLOADPPPPPPPPPPPP #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <set-session-variable variableName="token" value="#[payload.access_token]" doc:name="Set accessToken Session Variable"/>
+        <set-variable variableName="refreshToken" value="#[payload.refresh_token]" doc:name="Set refreshToken"/>
+        <logger message="#[sessionVars.token]" level="INFO" doc:name="Logger"/>
+        <munit:assert-true message="Expected accessToken but found #[payload]" condition="#[payload.error == empty]" doc:name="Assert True"/>
+        <set-variable variableName="token" value="#[sessionVars.token]" doc:name="Set token"/>
+        <flow-ref name="getBitbucketUserFlow" doc:name="Get Bitbucket User Flow"/>
+        <logger message="#[message.payloadAs(java.lang.String)] LASTTTTTTTTTTTTTTTTTTTTTT #[payload.username]" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="user" value="#[payload.username]" doc:name="Set Bitbucket Owner"/>
+        <munit:assert-true message="Expected bitbucket ownername but found #[message.exception] or #[payload]" condition="#[payload.username != empty]" doc:name="Assert True"/>
+        <flow-ref name="refreshBitbucketTokenFlow" doc:name="Refresh Bitbucket token"/>
+        <logger message="REFRESHHHHHHHHHHHHHH #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <munit:assert-true message="Expected refreshment of  accessToken, but found #[payload]" condition="#[payload.error == empty]" doc:name="Assert True"/>
+        <set-variable variableName="token" value="#[payload.access_token]" doc:name="Set accessToken"/>
+        <logger message="TOKENNNNNNNNNNNNNNNN #[flowVars.token]" level="INFO" doc:name="Logger"/>
+        <flow-ref name="getBitbucketRepositoriesFlow" doc:name="Get bitbucket Repositories"/>
+        <logger message="#[payload.values[0].name] ORRRRRRR #[payload.values[0]]  #[message.payloadAs(java.lang.String)] REPOSITORYYYYYYYYYYYYYYYYY" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="repository" value="#[payload.values[0].name]" doc:name="Set Repository"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.repository = flowVars.repository.toLowerCase().replace(' ','-');]]></expression-component>
+        <munit:assert-true message="Expected a bitbucket repository but foud #[payload]" condition="#[flowVars.repository != empty]" doc:name="Assert True"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-variable variableName="hookBody"><![CDATA[%dw 1.0
+%output application/java
+---
+{
+  description: "Munit Webhook",
+  url: "https://cisco-spark-integration-management-new-dev.cloudhub.io/api/hooks/e86a3ab0-78f7-11e6-82b5-1246d3a72a17",
+  active: true,
+  events:  ["pullrequest:created", "issue:comment_created", "issue:created", "repo:push"]
+}]]></dw:set-variable>
+        </dw:transform-message>
+        <flow-ref name="postBitbucketHookFlow" doc:name="Create Bitbucket WebHook flow"/>
+        <set-variable variableName="hookId" value="#[payload.uuid]" doc:name="Set bitbucket Webhook UUID"/>
+        <munit:assert-true message="Excected webhook to be created, but found #[payload]" condition="#[flowVars.hookId != empty]" doc:name="Assert True"/>
+        <flow-ref name="getBitbucketHookFlow" doc:name="getBitbucketHookFlow"/>
+        <logger message="GET BITBUCKET HOOK ID #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+        <flow-ref name="putBitbucketHookFlow" doc:name="Update bitbucket Hook flow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+        <flow-ref name="deleteBitbucketHookFlow" doc:name="Delete bitbucket Webhook ID"/>
+        <logger message="DELETED PAYLOAD #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+
+    </munit:test>
+    <munit:test name="bitbucket-api-calls-test-suite-getBitbucketUserFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+
+        </mock:when>
+        <flow-ref name="getBitbucketUserFlow" doc:name="Flow-ref to getBitbucketUserFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    <munit:test name="bitbucket-api-calls-test-suite-getBitbucketRepositoriesFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+
+        </mock:when>
+        <flow-ref name="getBitbucketRepositoriesFlow" doc:name="getBitbucketRepositoriesFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    <munit:test name="bitbucket-api-calls-test-suite-postBitbucketHookFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+        </mock:when>
+        <set-variable variableName="hookBody" value="#[{&quot;description&quot;:&quot;cisco_bitbucket&quot;,&quot;url&quot;:&quot;https://cisco-spark-integration-management-new-dev.cloudhub.io/api/hooks/3a8f6bc0-6bb1-11e6-9a89-0603f5b6d565&quot;,&quot;events&quot;:[&quot;repo:push&quot;,&quot;issue:created&quot;,&quot;pullrequest:created&quot;],&quot;active&quot;:true}]" doc:name="Set Hook Body"/>
+        <flow-ref name="postBitbucketHookFlow" doc:name="Flow-ref to postBitbucketHookFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    <munit:test name="bitbucket-api-calls-test-suite-putBitbucketHookFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+        </mock:when>
+        <set-variable variableName="hookBody" value="#[{&quot;description&quot;:&quot;cisco_bitbucket&quot;,&quot;url&quot;:&quot;https://cisco-spark-integration-management-new-dev.cloudhub.io/api/hooks/3a8f6bc0-6bb1-11e6-9a89-0603f5b6d565&quot;,&quot;events&quot;:[&quot;repo:push&quot;,&quot;issue:created&quot;,&quot;pullrequest:created&quot;],&quot;active&quot;:true}]" doc:name="Set Hook Body"/>
+        <set-variable variableName="hookId" value="1" doc:name="Set Hook Id"/>
+        <flow-ref name="putBitbucketHookFlow" doc:name="Flow-ref to putBitbucketHookFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+     <munit:test name="bitbucket-api-calls-test-suite-refreshBitbucketTokenFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+   "client_id": '${bitbucket.integration.client.id}',
+   "client_secret": '${bitbucket.integration.client.secret}',
+   "grant_type": 'refresh_token',
+   "refresh_token": flowVars.refreshToken
+
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <flow-ref name="refreshBitbucketTokenFlow" doc:name="refreshBitbucketTokenFlow"/>
+        <munit:assert-not-null message="Expected: Refresh token details, Got : Null payload" doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    
+    <munit:test name="bitbucket-api-calls-test-suite-deleteBitbucketHookFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <set-variable variableName="hookId" value="#['{hjjkhdjfs145620dsfjgkldfgklsdf4}']" doc:name="Variable"/>
+        <flow-ref name="deleteBitbucketHookFlow" doc:name="Flow-ref to deleteBitbucketHookFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    <munit:test name="bitbucket-api-calls-test-suite-getBitbucketHookFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <set-variable variableName="token" value="Bearer #[flowVars.token]" doc:name="Set Token"/>
+        <set-variable variableName="hookId" value="#[flowVars.hookId]" doc:name="Set HookId"/>
+        <set-variable variableName="repository" value="#[flowVars.repository]" doc:name="Set Repository"/>
+        <set-variable variableName="user" value="#[flowVars.user]" doc:name="Set User"/>
+        <flow-ref name="getBitbucketHookFlow" doc:name="Flow-ref to getBitbucketHookFlow"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+</mule>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:mock="http://www.mulesoft.org/schema/mule/mock"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:core="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/mock http://www.mulesoft.org/schema/mule/mock/current/mule-mock.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+    <munit:config name="munit" doc:name="MUnit configuration"/>
+    <spring:beans>
+        <spring:import resource="classpath:bitbucket-api-calls.xml"/>
+        <spring:import resource="classpath:global.xml"/>
+        <spring:import resource="classpath:bitbucket-integration.xml"/>
+        <spring:import resource="classpath:integration-token-operations.xml"/>
+        <spring:import resource="classpath:core-services-invocations.xml"/>
+    </spring:beans>
+    <munit:test name="integration-token-operations-test-suite-getIntegrationTokenFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP_MOCK']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+
+        </mock:when>
+        <set-variable variableName="client_id" value="#['111']" doc:name="Set ClientId"/>
+        <set-variable variableName="client_secret" value="#['111']" doc:name="Set ClientSecret"/>
+        <set-variable variableName="userId" value="#['Y2lzY29zcGFyazovL3VzL1BFT1BMRS83NzcyOTRkNy03NWZmLTQ5YmEtYjE5Yy02NzcyMTExMGYwMjM']" doc:name="Set UserId"/>
+        <set-variable variableName="integrationId" value="#['Y2lzY29zcGFyazovL3VzL0FQUExJQ0FUSU9OLzAyM2RmYmMwLTQ5MjUtNDc1NC05ZDJiLTdkMjE0NmY4ZDllMg']" doc:name="Set IntegrationId"/>
+        <flow-ref name="getIntegrationTokenFlow" doc:name="getIntegrationTokenFlow"/>
+        <logger message="PAYYYYYYYYYYYYYYYYYYYYYYYYY  #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <munit:assert-true message="Expected #[flowVars.userId] and #[flowVars.integrationId], but found #[payload.userId] and #[payload.integrationId]" condition="#[ payload.userId == flowVars.userId &amp;&amp; payload.integrationId == flowVars.integrationId]" doc:name="Assert True"/>
+        <set-variable variableName="appTokenId" value="#[payload.tokenId]" doc:name="Set AppToken ID"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload" message="Expected payload, but found #[payload]"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-variable variableName="refreshResult"><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	"access_token":payload.accessToken,
+	"refresh_token":payload.refreshToken
+	
+}]]></dw:set-variable>
+        </dw:transform-message>
+        <logger message="FINAL PAYLOAD #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <flow-ref name="putIntegrationTokenOperationFlow" doc:name="Put integration token"/>
+        <munit:assert-not-null message="Expected payload, but found #[payload]" doc:name="Assert Not Null Payload"/>
+        <logger message="PAYYYYYYYYYYYYYYYYYYYYYYYYYYY #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+
+    </munit:test>
+    <munit:test name="integration-token-operations-test-suite-putIntegrationTokenOperationFlowTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-variable variableName="refreshResult"><![CDATA[%dw 1.0
+%output application/json
+---
+{
+  "access_token": "32ergejwrenfwfwjr3or3j-fskjnegkeglnr-2315245",
+  "expires_in":123,
+  "refresh_token": "2312313gsgsdgregsgegegw-gerweaewaxd32"
+}
+]]></dw:set-variable>
+        </dw:transform-message>
+        <set-variable variableName="integrationId" value="#['Y2lzY29zcGFyazovL3VzL0FQUExJQ0FUSU9OLzAyM2RmYmMwLTQ5MjUtNDc1NC05ZDJiLTdkMjE0NmY4ZDllMg']" doc:name="Set integrationId"/>
+        <set-variable variableName="appTokenId" value="#['123']" doc:name="Set AppTokenId"/>
+        <flow-ref name="putIntegrationTokenOperationFlow" doc:name="putIntegrationTokenOperationFlow"/>
+        <logger message="MSGGGGGGGGGGGGGGG #[payload]" level="INFO" doc:name="Logger"/>
+        <munit:assert-not-null message="kksdksdfsjdj" doc:name="Assert Not Null Payload"/>
+    </munit:test>
+    <munit:test name="integration-token-operations-test-suite-putIntegrationInstanceTest" description="Test">
+        <mock:when messageProcessor=".*:.*" doc:name="Mock">
+            <mock:with-attributes>
+                <mock:with-attribute name="doc:name" whereValue="#['HTTP']"/>
+            </mock:with-attributes>
+            <mock:then-return payload="#[]"/>
+        </mock:when>
+        <flow-ref name="putIntegrationInstance" doc:name="putIntegrationInstance"/>
+        <munit:assert-not-null doc:name="Assert Not Null Payload"/>
+    </munit:test>
+</mule>

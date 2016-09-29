@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+   
+    <flow name="postAuthDetailsFlow">
+       <dw:transform-message doc:name="Transform Payload to Java">
+            <dw:set-payload resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+        </dw:transform-message>
+        
+        <enricher target="#[flowVars.postTokenResponse]" doc:name="Message Enricher">
+            <flow-ref name="postBitbucketTokenFlow" doc:name="postBitbucketTokenFlow"/>
+        </enricher>
+        
+        <dw:transform-message doc:name="Build Post Auth Details Response">
+            <dw:set-payload resource="classpath:dwScripts/buildPostAuthDetailsResponse.dwl"/>
+        </dw:transform-message>
+    </flow>
+
+
+    <flow name="postIntegrationSettingsFlow">
+        <set-variable variableName="userId" value="#[json:userId]" doc:name="Set UserId"/>
+        <set-variable variableName="integrationId" value="#[json:integrationId]" doc:name="Set IntegrationId"/>
+       <dw:transform-message doc:name="Transform Payload to Java">
+            <dw:set-payload resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+        </dw:transform-message>
+        <logger message=" PAYLOAD  AS STRING-1 #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+
+        <flow-ref name="getRuntimeAccessTokenFlow" doc:name="getRuntimeAccessTokenFlow"/>
+
+
+        
+        <enricher target="#[flowVars.userResponse]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketUserFlow" doc:name="getBitbucketUserFlow"/>
+        </enricher>
+        
+        <set-variable variableName="user" value="#[flowVars.userResponse.username]" doc:name="Set Bitbucket User"/>
+        <enricher target="#[flowVars.repositoriesResponse]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketRepositoriesFlow" doc:name="getBitbucketRepositoriesFlow"/>
+        </enricher>
+
+        
+        <dw:transform-message doc:name="Build Get Integration Settings Response">
+            <dw:set-payload resource="classpath:dwScripts/buildGetIntegrationSettingsResponse.dwl"/>
+        </dw:transform-message>
+    	
+    </flow>
+    
+
+
+<flow name="postFormatMessageFlow">
+       
+        <dw:transform-message doc:name="Transform Format Message Request To Java">
+            <dw:set-variable variableName="response" resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+        </dw:transform-message>
+        <logger message="#[flowVars.response]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Routing Message Format">
+            <when expression="#[flowVars.response.hookResponse.push]">
+            	<set-variable variableName="hashCode" value="#[flowVars.response.hookResponse.push.changes[0].commits[0].hash]" doc:name="Commit Hash Code"/>
+                <expression-component doc:name="SubString the Hash Value"><![CDATA[flowVars.hashCode = flowVars.hashCode.toString().substring(0,10);]]></expression-component>
+                <set-variable variableName="postMessage" value="#['**1 New Commit pushed** to '+flowVars.response.hookResponse.push.changes[0].new.type+'  ['+flowVars.response.hookResponse.push.changes[0].new.repository.name+']('+flowVars.response.hookResponse.push.changes[0].new.repository.links.html.href+')  by  ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - '+flowVars.response.hookResponse.push.changes[0].new.target.message+' - ['+flowVars.hashCode+']('+flowVars.response.hookResponse.push.changes[0].commits[0].links.html.href+')']" doc:name="Commit Message Format"/>
+            </when>
+            <when expression="#[flowVars.response.hookResponse.commit]">
+                <set-variable variableName="hashCode" value="#[flowVars.response.hookResponse.comment.commit.hash]" doc:name="Commit Comment Hash Code"/>
+                <expression-component doc:name="Expression"><![CDATA[flowVars.hashCode = flowVars.hashCode.toString().substring(0,10);]]></expression-component>
+                <set-variable variableName="postMessage" value="#['**Commit** ['+flowVars.hashCode+']('+flowVars.response.hookResponse.comment.commit.links.html.href+') commented by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - comment id = ['+flowVars.response.hookResponse.comment.id+']('+flowVars.response.hookResponse.comment.links.html.href+') \n - comment = '+flowVars.response.hookResponse.comment.content.raw+'']" doc:name="Commit Comment"/>
+
+                
+            </when>
+            <when expression="#[flowVars.response.hookResponse.pullrequest]">
+                <choice doc:name="Pull Requests">
+                    <when expression="#[flowVars.response.hookResponse.pullrequest.state=='MERGED']">
+                        <set-variable variableName="postMessage" value="#['**Pull request**  [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+')  '+flowVars.response.hookResponse.pullrequest.state+' by  ['+flowVars.response.hookResponse.actor.display_name+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+')']" doc:name="Pull Request Merge"/>
+                    </when>
+                    <when expression="#[flowVars.response.hookResponse.comment]">
+                        <set-variable variableName="postMessage" value="#['**Pull request**  [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+') commented on by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - comment id = ['+flowVars.response.hookResponse.comment.id+']('+flowVars.response.hookResponse.comment.links.html.href+') \n - comment = '+flowVars.response.hookResponse.comment.content.raw+'']" doc:name="Pull Request Comment"/>
+                    </when>
+                    <when expression="#[flowVars.response.hookResponse.pullrequest.state=='DECLINED']">
+                        <set-variable variableName="postMessage" value="#['**Pull request**  [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+')  '+flowVars.response.hookResponse.pullrequest.state+'  by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+')   \n  - reason = '+flowVars.response.hookResponse.pullrequest.reason+'']" doc:name="Pull Request Decline"/>
+                    </when>
+                    <when expression="#[flowVars.response.hookResponse.approval]">
+                        <set-variable variableName="postMessage" value="#['**Pull request** [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+')  approved by  ['+flowVars.response.hookResponse.approval.user.username+']('+flowVars.response.hookResponse.approval.user.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+')']" doc:name="Pull Request Approve"/>
+                    </when>
+                    <when expression="#[flowVars.response.hookResponse.pullrequest.state=='OPEN']">
+                        <set-variable variableName="createdDate" value="#[(new org.mule.el.datetime.DateTime(flowVars.response.hookResponse.pullrequest.created_on)).format('yyyy.MM.dd HH:mm:ss')]" doc:name="Created_Date"/>
+                        <set-variable variableName="updatedDate" value="#[(new org.mule.el.datetime.DateTime(flowVars.response.hookResponse.pullrequest.updated_on)).format('yyyy.MM.dd HH:mm:ss')]" doc:name="Updated_Date"/>
+                        <choice doc:name="Compare Created Date And Updated Date">
+                            <when expression="#[flowVars.createdDate==flowVars.updatedDate]">
+                                <set-variable variableName="postMessage" value="#['**Pull request** [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+') created by  ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - source = ['+flowVars.response.hookResponse.pullrequest.source.commit.hash+']('+flowVars.response.hookResponse.pullrequest.source.repository.links.html.href+')  \n - destination = ['+flowVars.response.hookResponse.pullrequest.destination.commit.hash+']('+flowVars.response.hookResponse.pullrequest.destination.repository.links.html.href+')']" doc:name="Pull Request Create"/>
+                            </when>
+                            <when expression="#[flowVars.createdDate&lt;flowVars.updatedDate]">
+                                <set-variable variableName="postMessage" value="#['**Pull request** [#'+flowVars.response.hookResponse.pullrequest.id+' : '+flowVars.response.hookResponse.pullrequest.title+']('+flowVars.response.hookResponse.pullrequest.links.html.href+') updated by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - source = ['+flowVars.response.hookResponse.pullrequest.source.commit.hash+']('+flowVars.response.hookResponse.pullrequest.source.repository.links.html.href+')  \n - destination = ['+flowVars.response.hookResponse.pullrequest.destination.commit.hash+']('+flowVars.response.hookResponse.pullrequest.destination.repository.links.html.href+')']" doc:name="Pull Request Update"/>
+                            </when>
+                            <otherwise>
+                                <logger level="INFO" doc:name="Logger"/>
+                            </otherwise>
+                        </choice>
+
+                    </when>
+                    <otherwise>
+                        <logger message="Pull Condition Failed" level="INFO" doc:name="Pull Condition Failed"/>
+                    </otherwise>
+                </choice>
+            </when>
+            <when expression="#[flowVars.response.hookResponse.issue]">
+                <choice doc:name="Issues">
+                    <when expression="#[flowVars.response.hookResponse.issue.created_on==flowVars.response.hookResponse.issue.updated_on]">
+                        <set-variable variableName="postMessage" value="#['**Issue**  [#'+flowVars.response.hookResponse.issue.id+' : '+flowVars.response.hookResponse.issue.title+']('+flowVars.response.hookResponse.issue.links.html.href+') created by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+')   \n  - priority = '+flowVars.response.hookResponse.issue.priority+'']" doc:name="Issue Created"/>
+                    </when>
+                    <when expression="#[flowVars.response.hookResponse.changes]">
+                        <choice doc:name="Changes In Issue Title And Comment On Update">
+                            <when expression="#[flowVars.response.hookResponse.changes.title.new != empty]">
+                                <set-variable variableName="postMessage" value="#['**Issue** [#'+flowVars.response.hookResponse.issue.id+' : '+flowVars.response.hookResponse.issue.title+']('+flowVars.response.hookResponse.issue.links.html.href+') updated by  ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - issue title updated = '+flowVars.response.hookResponse.issue.title+'  \n  - priority = '+flowVars.response.hookResponse.issue.priority+'']" doc:name="Issue Title Updated"/>
+                            </when>
+                            <when expression="#[flowVars.response.hookResponse.comment]">
+                                <set-variable variableName="postMessage" value="#['**Issue** [#'+flowVars.response.hookResponse.issue.id+' : '+flowVars.response.hookResponse.issue.title+']('+flowVars.response.hookResponse.issue.links.html.href+') updated by  ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n  - priority = '+flowVars.response.hookResponse.issue.priority+' \n - comment id = ['+flowVars.response.hookResponse.comment.id+']('+flowVars.response.hookResponse.comment.links.self.href+') \n - comment = '+flowVars.response.hookResponse.comment.content.raw+'']" doc:name="Issue Comment Updated"/>
+                            </when>
+                            <otherwise>
+                                <set-variable variableName="postMessage" value="#['**Issue** [#'+flowVars.response.hookResponse.issue.id+' : '+flowVars.response.hookResponse.issue.title+']('+flowVars.response.hookResponse.issue.links.html.href+') updated by  ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n  - priority = '+flowVars.response.hookResponse.issue.priority+'']" doc:name="Issue Updated"/>
+                            </otherwise>
+                        </choice>
+                    </when>
+                    <otherwise>
+                        <set-variable variableName="postMessage" value="#['**Issue** [#'+flowVars.response.hookResponse.issue.id+' : '+flowVars.response.hookResponse.issue.title+']('+flowVars.response.hookResponse.issue.links.html.href+') commented by ['+flowVars.response.hookResponse.actor.username+']('+flowVars.response.hookResponse.actor.links.html.href+') in repository ['+flowVars.response.hookResponse.repository.full_name+']('+flowVars.response.hookResponse.repository.links.html.href+') \n - comment id = ['+flowVars.response.hookResponse.comment.id+']('+flowVars.response.hookResponse.comment.links.html.href+') \n - comment = '+flowVars.response.hookResponse.comment.content.raw+'']" doc:name="Issue Comment Create"/>
+                    </otherwise>
+                </choice>
+            </when>
+            
+            <otherwise>
+                <logger message="Default Condition" level="INFO" doc:name="Default Condition"/>
+            </otherwise>
+        </choice>
+         <dw:transform-message doc:name="Build Post Format Message Response">
+            <dw:set-payload resource="classpath:dwScripts/buildPostFormatMessageResponse.dwl"/>
+        </dw:transform-message>
+    </flow>
+ 
+<flow name="setupIntegrationFlow">
+
+      <set-variable variableName="userId" value="#[json:userId]" doc:name="Set UserId"/>
+      <set-variable variableName="integrationId" value="#[json:integrationId]" doc:name="Set IntegrationId"/>
+
+      <set-variable variableName="events" value="#[json:configJson/events]" doc:name="Set Events"/>
+      <set-variable variableName="displayName" value="#[json:configJson/displayName]" doc:name="Set Display Name"/>
+      <set-variable variableName="roomName" value="#[json:configJson/room_name]" doc:name="Set Room Name"/>
+      <set-variable variableName="repoId" value="#[json:configJson/repo_id]" doc:name="Set RoomId"/>
+      <set-variable variableName="userName" value="#[json:configJson/user_name]" doc:name="Set User Name"/>
+      <set-variable variableName="authenticatedTo" value="#[json:configJson/authenticated_to]" doc:name="Set Authenticated to"/>
+      <set-variable variableName="instanceId" value="#[json:instanceId]" doc:name="Set Instance Id"/>
+
+
+      <dw:transform-message doc:name="Transform Payload to Java">
+          <dw:set-payload resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+      </dw:transform-message>
+      <set-variable variableName="configJson" value="#[payload.configJson]" doc:name="Set ConfigJson"/>
+
+      
+         <flow-ref name="getRuntimeAccessTokenFlow" doc:name="getRuntimeAccessTokenFlow"/>
+         
+         <enricher target="#[flowVars.userResponse]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketUserFlow" doc:name="getBitbucketUserFlow"/>
+        </enricher>
+        
+        <set-variable variableName="user" value="#[flowVars.userResponse.username]" doc:name="Set Bitbucket User"/>
+        <enricher target="#[flowVars.getRepoResult]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketSpecificRepoFromSlugIdFlow" doc:name="getBitbucketSpecificRepoFromSlugIdFlow"/>
+        </enricher>
+        <set-variable variableName="repository" value="#[flowVars.getRepoResult.name]" doc:name="Set Repository"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.repository = flowVars.repository.toString().toLowerCase().replace(' ','-');]]></expression-component>
+        <logger message=" #[flowVars.getRepoResult] REPO FORM API #[flowVars.repository]" level="INFO" doc:name="Logger"/>
+
+
+     
+      <dw:transform-message doc:name="Build Post Bitbucket Hook Body">
+          <dw:set-variable resource="classpath:dwScripts/buildPostBitbucketHookBody.dwl" variableName="hookBody"/>
+
+      </dw:transform-message>
+      
+      <enricher target="#[flowVars.postHookResponse]" doc:name="Message Enricher">
+          <flow-ref name="postBitbucketHookFlow" doc:name="postBitbucketHookFlow"/>
+      </enricher>
+      <set-variable variableName="hookId" value="#[flowVars.postHookResponse.uuid]" doc:name="Set Webhook UUID"/>
+
+      <enricher target="#[flowVars.putIntegrationResult]" doc:name="Message Enricher">
+          <flow-ref name="putIntegrationInstance" doc:name="Update Integration Instance"/>
+      </enricher>
+      
+      <dw:transform-message doc:name="Build Setup Integration Response">
+          <dw:set-payload resource="classpath:dwScripts/buildSetupIntegrationResponse.dwl"/>
+      </dw:transform-message>
+  </flow>
+    <flow name="tearDownIntegrationFlow">
+    
+ 		<set-variable variableName="userId" value="#[json:userId]" doc:name="Set UserId"/>
+        <set-variable variableName="integrationId" value="#[json:integrationId]" doc:name="Set IntegrationId"/>
+         
+       <set-variable variableName="configJson" value="#[json:configJson]" doc:name="Set ConfigJson"/>
+
+       <dw:transform-message doc:name="Transform Payload to Java">
+           <dw:set-payload resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+       </dw:transform-message>
+       
+       <flow-ref name="getRuntimeAccessTokenFlow" doc:name="getRuntimeAccessTokenFlow"/>
+       
+       <enricher target="#[flowVars.userResponse]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketUserFlow" doc:name="getBitbucketUserFlow"/>
+        </enricher>
+        
+        <set-variable variableName="user" value="#[flowVars.userResponse.username]" doc:name="Set Bitbucket User"/>
+
+       
+       
+       <dw:transform-message doc:name="Transform Message">
+           <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload.configJson]]></dw:set-payload>
+       </dw:transform-message>
+
+       <set-variable variableName="hookId" value="#[json:webhookUuid]" doc:name="Set hookId"/>
+        <set-variable variableName="repoId" value="#[json:repo_id]" doc:name="Set RepoId"/>
+        <enricher target="#[flowVars.getRepoResult]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketSpecificRepoFromSlugIdFlow" doc:name="getBitbucketSpecificRepoFromSlugIdFlow"/>
+        </enricher>
+        <set-variable variableName="repository" value="#[flowVars.getRepoResult.name]" doc:name="Set Repository"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.repository = flowVars.repository.toString().toLowerCase().replace(' ','-');]]></expression-component>
+        <logger message=" #[flowVars.getRepoResult] REPO FORM API #[flowVars.repository]" level="INFO" doc:name="Logger"/>
+
+       <expression-component doc:name="Remove curly braces"><![CDATA[flowVars.hookId = flowVars.hookId.toString().toString().replace('{','').replace('}','')]]></expression-component>
+       <enricher target="#[flowVars.deleteHookResponse]" doc:name="Message Enricher">
+           <flow-ref name="deleteBitbucketHookFlow" doc:name="deleteBitbucketHookFlow"/>
+       </enricher>
+
+       
+       
+       <dw:transform-message doc:name="Build Tear Down Integration Response">
+           <dw:set-payload resource="classpath:dwScripts/buildTearDownIntegrationResponse.dwl"/>
+       </dw:transform-message>
+   </flow>
+    
+    
+<flow name="updateIntegrationFlow">
+
+        <set-variable variableName="userId" value="#[json:userId]" doc:name="Set UserId"/>
+        <set-variable variableName="integrationId" value="#[json:integrationId]" doc:name="Set IntegrationId"/>
+
+       <set-variable variableName="events" value="#[json:configJson/events]" doc:name="Set Events"/>
+       <set-variable variableName="displayName" value="#[json:configJson/displayName]" doc:name="Set Display Name"/>
+
+       <set-variable variableName="repoId" value="#[json:configJson/repo_id]" doc:name="Set repoId"/>
+        <set-variable variableName="oldRepoId" value="#[json:repo_id_old]" doc:name="Set Old repoId"/>
+        <logger message="REPO ID #[flowVars.repoId] AND OLD REPO ID #[flowVars.oldRepoId]" level="INFO" doc:name="Logger"/>
+        <logger message="MMMMMMMMMMMMMM #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+
+       <set-variable variableName="hookId" value="#[json:configJson/webhookUuid]" doc:name="Set WebhookId"/>
+
+       <set-variable variableName="instanceId" value="#[json:instance_id]" doc:name="Set InstanceId"/>
+
+
+       <dw:transform-message doc:name="Transform Payload to Java">
+           <dw:set-payload resource="classpath:dwScripts/fromPayloadToJava.dwl"/>
+       </dw:transform-message>
+       <set-variable variableName="repoModified" value="#[payload.repo_modified]" doc:name="Is Repo Modified"/>
+       
+      <flow-ref name="getRuntimeAccessTokenFlow" doc:name="getRuntimeAccessTokenFlow"/>
+        <enricher target="#[flowVars.userResponse]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketUserFlow" doc:name="getBitbucketUserFlow"/>
+        </enricher>
+        <set-variable variableName="user" value="#[flowVars.userResponse.username]" doc:name="Set User"/>
+        
+         <enricher target="#[flowVars.getRepoResult]" doc:name="Message Enricher">
+            <flow-ref name="getBitbucketSpecificRepoFromSlugIdFlow" doc:name="Get Current Repository"/>
+        </enricher>
+        <set-variable variableName="repository" value="#[flowVars.getRepoResult.name]" doc:name="Set Repository"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.repository = flowVars.repository.toString().toLowerCase().replace(' ','-');]]></expression-component>
+        <logger message=" #[flowVars.getRepoResult] REPO FORM API #[flowVars.repository]" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.repoId != flowVars.oldRepoId]">
+                <logger message="REPO ID #[flowVars.repoId] REEEEEEEEEEEEE" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="backupRepoId" value="#[flowVars.repoId]" doc:name="Repo Id backup"/>
+                <set-variable variableName="repoId" value="#[flowVars.oldRepoId]" doc:name="Set Old Repo Id"/>
+                <logger message="REPO ID #[flowVars.repoId] REEEEEEEEEEEEE" level="INFO" doc:name="Logger"/>
+                <enricher target="#[flowVars.getRepoResult]" doc:name="Message Enricher">
+                    <flow-ref name="getBitbucketSpecificRepoFromSlugIdFlow" doc:name="Get Old Repository"/>
+                </enricher>
+                <set-variable variableName="oldRepo" value="#[flowVars.getRepoResult.name]" doc:name="Set old Repository"/>
+                <expression-component doc:name="Expression"><![CDATA[flowVars.oldRepo = flowVars.oldRepo.toString().toLowerCase().replace(' ','-');]]></expression-component>
+                <logger message=" #[flowVars.getRepoResult] OLD REPO FORM API #[flowVars.repository]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="repoId" value="#[flowVars.backupRepoId]" doc:name="Reset newRepoId to save"/>
+            </when>
+            <otherwise>
+                <logger message="BEFORE  REPO ID NOT EXISTS #[flowVars.repoId]" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="repoId" value="#[flowVars.repoId]" doc:name="Update repoId"/>
+                <set-variable variableName="oldRepo" value="#[flowVars.repository]" doc:name="Update old Repo Name"/>
+                <logger message="OLD REPO ID NOT EXISTS #[flowVars.repoId]" level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <logger message="REPO NAME #[flowVars.repository] AND OLD REPONAME #[flowVars.oldRepo]" level="INFO" doc:name="Logger"/>
+
+       
+
+       
+       <dw:transform-message doc:name="Build Put Bitbucket Hook Body">
+           <dw:set-variable resource="classpath:dwScripts/buildPutBitbucketHookBody.dwl" variableName="hookBody"/>
+
+       </dw:transform-message>
+       <choice doc:name="Choice">
+           <when expression="#[flowVars.repoModified == true]">
+                <logger message="CREATING REPOS #[flowVars.repository]" level="INFO" doc:name="Logger"/>
+               <enricher target="#[flowVars.hookResponse]" doc:name="Message Enricher">
+                   <flow-ref name="postBitbucketHookFlow" doc:name="Create"/>
+               </enricher>
+
+               <set-variable variableName="repository" value="#[flowVars.oldRepo]" doc:name="Update Repo"/>
+                <logger message="DELETING  REPOS #[flowVars.repository]]" level="INFO" doc:name="Logger"/>
+
+               <enricher target="#[flowVars.deleteHookResponse]" doc:name="Message Enricher">
+                   <flow-ref name="deleteBitbucketHookFlow" doc:name="Delete Webhook Flow"/>
+               </enricher>
+               <set-variable variableName="hookId" value="#[flowVars.hookResponse.uuid]" doc:name="Set Updated WebhookId"/>
+
+
+           </when>
+           <otherwise>
+               <enricher target="#[flowVars.hookResponse]" doc:name="Message Enricher">
+                   <flow-ref name="putBitbucketHookFlow" doc:name="putBitbucketHookFlow"/>
+               </enricher>
+           </otherwise>
+       </choice>
+       <enricher target="#[flowVars.updateIntegrationInstanceResult]" doc:name="Message Enricher">
+           <flow-ref name="putIntegrationInstance" doc:name="putIntegrationInstance"/>
+       </enricher>
+
+       
+       <dw:transform-message doc:name="Build Update Integration Response">
+           <dw:set-payload resource="classpath:dwScripts/buildUpdateIntegrationResponse.dwl"/>
+       </dw:transform-message>
+   </flow>
+    
+    
+<flow name="getRuntimeAccessTokenFlow">
+        <logger message=" PAYLOAD  AS STRING #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+
+      <set-variable variableName="notificationUrl" value="#['https://${bitbucket.hook.domain}/api/hooks/' + payload.instanceUuid]" doc:name="Set Notification Url"/>
+        <logger message="USER ID #[flowVars.userId] AND #[flowVars.integrationId]" level="INFO" doc:name="Logger"/>
+
+
+      
+      <enricher target="#[flowVars.getTokenResponse]" doc:name="Message Enricher">
+          <flow-ref name="getIntegrationTokenFlow" doc:name="getIntegrationTokenFlow"/>
+      </enricher>
+        <logger message="TOKEN RESPONSE #[flowVars.getTokenResponse]" level="INFO" doc:name="Logger"/>
+      
+      <set-variable variableName="token" value="#[flowVars.getTokenResponse.accessToken]" doc:name="Set Bitbucket Token"/>
+       <set-variable variableName="expires" value="#[flowVars.getTokenResponse.expires]" doc:name="Set Token  Expires Time"/>
+       <set-variable variableName="currentTime" value="#[server.dateTime.plusSeconds(300).format('yyyy-MM-dd HH:mm:ss')]" doc:name="Set Current Time plus 5mins"/>
+       <set-variable variableName="refreshToken" value="#[flowVars.getTokenResponse.refreshToken]" doc:name="refreshToken"/>
+        <logger message="LOGGGGGGGGGGGGGGG #[flowVars.expires] AND #[flowVars.token]" level="INFO" doc:name="Logger"/>
+
+       <choice doc:name="Choice">
+           <when expression="#[((flowVars.expires != empty) &amp;&amp; (server.dateTime.plusSeconds(300).toCalendar().compareTo(new org.mule.el.datetime.DateTime(flowVars.expires).toCalendar())==1))  || ((flowVars.expires != empty) &amp;&amp; (server.dateTime.plusSeconds(300).toCalendar().compareTo(new org.mule.el.datetime.DateTime(flowVars.expires).toCalendar())== -1))]">
+               <logger message="REFRESHING ACCESS TOKEN" level="INFO" doc:name="Refreshing"/>
+                <logger message="#[server.dateTime.plusSeconds(300).toCalendar().compareTo(new org.mule.el.datetime.DateTime(flowVars.expires).toCalendar())==1]CALEBDER #[new org.mule.el.datetime.DateTime(flowVars.expires).toCalendar().compareTo(server.dateTime.toCalendar())]" level="INFO" doc:name="Logger"/>
+               <set-variable variableName="appTokenId" value="#[flowVars.getTokenResponse.tokenId]" doc:name="Set AppTokenID"/>
+               <enricher target="#[flowVars.refreshResult]" doc:name="Message Enricher">
+                   <flow-ref name="refreshBitbucketTokenFlow" doc:name="refreshBitbucketTokenFlow"/>
+               </enricher>
+               <set-variable variableName="token" value="#[flowVars.refreshResult.access_token]" doc:name="Set Bitbucket AccessToken"/>
+                <enricher target="#[flowVars.updateIntegrationTokenResult]" doc:name="Message Enricher">
+                    <flow-ref name="putIntegrationTokenOperationFlow" doc:name="putIntegrationTokenOperationFlow"/>
+                </enricher>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload]]></dw:set-payload>
+                </dw:transform-message>
+
+           </when>
+           <otherwise>
+               <logger message="TOKEN NOT EXPIRED" level="INFO" doc:name="Logger"/>
+           </otherwise>
+       </choice>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="Exception Exception Exception Occured #[message.payloadAs(java.lang.String)] #[flowVars.userId] USERID #[flowVars.integrationId] INTEGRATIONID" level="INFO" doc:name="Logger"/>
+        </catch-exception-strategy>
+
+  </flow>
+
+    
+    <flow name="healthCheckFlow">
+        <set-variable variableName="userId" value="#[json:userId]" doc:name="Set UserId"/>
+        <set-variable variableName="integrationId" value="#[json:integrationId]" doc:name="Set IntegrationId"/>
+        <logger message="USERID #[flowVars.userId] AND #[flowVars.integrationId]" level="INFO" doc:name="Logger"/>
+        <enricher target="#[flowVars.tokenResult]" doc:name="Message Enricher">
+            <flow-ref name="getIntegrationTokenFlow" doc:name="getIntegrationTokenFlow"/>
+        </enricher>
+        <logger message="#[flowVars.tokenResult.toString()] TCHECKKKKKKKKKKKKKKKK" level="INFO" doc:name="Logger"/>
+        <choice doc:name="Choice">
+            <when expression="#[ flowVars.tokenResult.toString() != 'No results']">
+                <set-variable variableName="refreshToken" value="#[flowVars.tokenResult.refreshToken]" doc:name="Set RefreshToken"/>
+                <logger message="#[flowVars.tokenResult.refreshToken] REFRESAHTOKENTOKEN" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="appTokenId" value="#[flowVars.tokenResult.tokenId]" doc:name="Set appTokenId"/>
+                <logger message="#[flowVars.tokenResult] TOKENNNNNNNNNNNNNNNN #[flowVars.refreshTokenResult]EFRESH TOKEN RESUTL" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="status" value="#['ACTIVE']" doc:name="Set Status"/>
+                <http:request config-ref="HTTP_Integrations_Runtime_Request_Configuration" path="/integrations/instances/" method="GET" doc:name="HTTP">
+                    <http:request-builder>
+                        <http:query-param paramName="client_id" value="${runtime.clientidenforcement.id}"/>
+ 						<http:query-param paramName="client_secret" value="${runtime.clientidenforcement.secret}"/>
+                        <http:query-param paramName="integrationId" value="#[flowVars.integrationId]"/>
+                        <http:query-param paramName="userId" value="#[flowVars.userId]"/>
+                        <http:query-param paramName="status" value="#[flowVars.status]"/>
+                    </http:request-builder>
+                </http:request>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload]]></dw:set-payload>
+                </dw:transform-message>
+                <logger message="PAYYYYYYYYYYYYYYYYYYYYYYYYY #[payload]" level="INFO" doc:name="Logger"/>
+            <choice doc:name="Choice">
+            <when expression="#[payload[0] != empty]">
+                <enricher target="#[flowVars.refreshResult]" doc:name="Message Enricher">
+                    <flow-ref name="refreshBitbucketTokenFlow" doc:name="refreshBitbucketTokenFlow"/>
+                </enricher>
+                <set-variable variableName="token" value="#[flowVars.refreshResult.access_token]" doc:name="Set Integration AccessToken"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload[0].configJson]]></dw:set-payload>
+                </dw:transform-message>
+                <set-variable variableName="hookId" value="#[json:webhookUuid]" doc:name="Set webhookUuid"/>
+                <set-variable variableName="user" value="#[json:owner_name]" doc:name="Set ownerName"/>
+                <set-variable variableName="repository" value="#[json:repo_name]" doc:name="Set repository"/>
+                <expression-component doc:name="Expression"><![CDATA[flowVars.hookId = flowVars.hookId.toString().replace('{','').replace('}','')]]></expression-component>
+                <logger message="HHHHHHHHHHHHHHHHH #[flowVars.hookId] and #[flowVars.user] and #[flowVars.repository] AND #[flowVars.token]" level="INFO" doc:name="Logger"/>
+                <enricher target="#[flowVars.getHookResult]" doc:name="Message Enricher">
+                    <flow-ref name="getBitbucketHookFlow" doc:name="getBitbucketHookFlow"/>
+                </enricher>
+                <enricher target="#[flowVars.putIntegrationTokenOperationResult]" doc:name="Message Enricher">
+                    <flow-ref name="putIntegrationTokenOperationFlow" doc:name="putIntegrationTokenOperationFlow"/>
+                </enricher>
+            </when>
+            <otherwise>
+                <set-variable variableName="getHookResult" value="#['No Instances found to get the webhook detials for the given user']" doc:name="Set hookResult"/>
+            </otherwise>
+        </choice>
+            
+            
+            </when>
+            <otherwise>
+                <logger message="NO RESULT FOUND NO RESULT FOUND" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="getHookResult" value="#['No Instances found to get the webhook detials for the given user']" doc:name="Set HookResult"/>
+            </otherwise>
+        </choice>
+
+        
+        <dw:transform-message doc:name="Build Health Check Response">
+            <dw:set-payload resource="classpath:dwScripts/buildHealthCheckResponse.dwl"/>
+        </dw:transform-message>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="Exception has been encounter while processing health check #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        </catch-exception-strategy>
+    </flow>
+
+</mule>
